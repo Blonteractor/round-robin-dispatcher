@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, str::FromStr};
 
 #[derive(Default, Debug, Clone)]
 pub struct GranttNode {
@@ -55,7 +55,7 @@ impl Process {
             burst_time,
             exit_time: None,
             progress: 0,
-            state: ProcessState::NotInSytstem,
+            state: ProcessState::default(),
         }
     }
 
@@ -146,5 +146,46 @@ impl Process {
 
     pub fn run_to_completion(&mut self) -> usize {
         self.run_for(self.burst_time)
+    }
+}
+
+impl FromStr for Process {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let values: Vec<&str> = s.trim().split_whitespace().collect();
+        if values.len() < 3 {
+            return Err("Process string should contain at least 3 values".to_string());
+        }
+
+        let pid = values[0]
+            .parse::<usize>()
+            .map_err(|_| "Invalid pid".to_string())?;
+        let arrival_time = values[1]
+            .parse::<usize>()
+            .map_err(|_| "Invalid arrival_time".to_string())?;
+        let burst_time = values[2]
+            .parse::<usize>()
+            .map_err(|_| "Invalid burst_time".to_string())?;
+        let priority = values
+            .get(3)
+            .map(|v| v.parse::<usize>().unwrap_or(0))
+            .unwrap_or(0);
+
+        Ok(Process {
+            pid,
+            arrival_time,
+            burst_time,
+            exit_time: None,
+            priority,
+            state: ProcessState::default(),
+            progress: 0,
+        })
+    }
+}
+
+impl From<String> for Process {
+    fn from(s: String) -> Self {
+        s.parse().unwrap()
     }
 }
