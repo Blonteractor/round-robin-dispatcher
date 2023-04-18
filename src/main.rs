@@ -1,5 +1,5 @@
 use round_robin_dispatcher::process::Process;
-use round_robin_dispatcher::{Dispatcher, RoundRobinDispatcher};
+use round_robin_dispatcher::RoundRobinDispatcher;
 use std::io::{self, Write};
 
 fn main() {

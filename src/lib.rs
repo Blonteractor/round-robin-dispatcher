@@ -1,12 +1,7 @@
 pub mod process;
 use std::collections::VecDeque;
 
-use process::{GranttNode, Process, ProcessState, SchedulerResult};
-
-pub trait Dispatcher {
-    fn add_process(&mut self, process: Process);
-    fn run(&mut self);
-}
+use process::{Process, ProcessState, SchedulerResult};
 
 pub struct RoundRobinDispatcher {
     queue: VecDeque<Process>,
@@ -25,6 +20,61 @@ impl RoundRobinDispatcher {
 
     pub fn set_quantum(&mut self, quantum: usize) {
         self.quantum = quantum;
+    }
+
+    pub fn add_process(&mut self, process: Process) {
+        self.queue.push_back(process);
+    }
+
+    pub fn run(&mut self) {
+        let mut tick = 0;
+        let mut last_unfinished_process_id: Option<usize> = None;
+        let mut waiting_queue: VecDeque<usize> = VecDeque::with_capacity(self.queue.len());
+        let mut process_to_run;
+
+        while !self
+            .queue
+            .iter()
+            .all(|p| matches!(p.state, ProcessState::Finished))
+        {
+            waiting_queue.extend(
+                self.queue
+                    .iter_mut()
+                    .filter(|p| {
+                        p.arrival_time <= tick
+                            && matches!(p.state, ProcessState::NotInSytstem)
+                            && last_unfinished_process_id.unwrap_or(usize::MAX) != p.pid
+                    })
+                    .map(|p| {
+                        p.state = ProcessState::Ready;
+                        p.pid
+                    }),
+            );
+
+            if let Some(lup) = last_unfinished_process_id {
+                waiting_queue.push_back(lup);
+                last_unfinished_process_id = None;
+            }
+
+            process_to_run = &mut self.queue[waiting_queue.pop_front().unwrap()];
+            process_to_run.state = ProcessState::NotInSytstem;
+            process_to_run.progress += self.quantum;
+
+            if process_to_run.progress >= process_to_run.burst_time {
+                process_to_run.state = ProcessState::Finished;
+                process_to_run.progress = process_to_run.burst_time;
+            }
+            tick += self.quantum;
+
+            if matches!(process_to_run.state, ProcessState::Finished) {
+                process_to_run.exit_time = Some(tick);
+            } else {
+                process_to_run.state = ProcessState::Ready;
+                last_unfinished_process_id = Some(process_to_run.pid);
+            }
+        }
+
+        self.result = Some(Process::compute_result(self.queue.iter()))
     }
 
     pub fn print_result(&self) {
@@ -58,65 +108,5 @@ impl RoundRobinDispatcher {
         } else {
             panic!("Use run() to run the processes first");
         }
-    }
-}
-
-impl Dispatcher for RoundRobinDispatcher {
-    fn add_process(&mut self, process: Process) {
-        self.queue.push_back(process);
-    }
-
-    fn run(&mut self) {
-        let mut tick = 0;
-        let mut last_unfinished_process_id: Option<usize> = None;
-        let mut waiting_queue: VecDeque<usize> = VecDeque::with_capacity(self.queue.len());
-        let mut process_to_run;
-        let mut grantt_chart = VecDeque::with_capacity(self.queue.len());
-
-        while !self.queue.iter().all(|p| p.is_finished()) {
-            waiting_queue.extend(
-                self.queue
-                    .iter_mut()
-                    .filter(|p| {
-                        p.arrival_time <= tick
-                            && !p.is_insystem()
-                            && last_unfinished_process_id.unwrap_or(usize::MAX) != p.pid
-                    })
-                    .map(|p| {
-                        p.state = ProcessState::Ready;
-                        p.pid
-                    }),
-            );
-
-            if let Some(lup) = last_unfinished_process_id {
-                waiting_queue.push_back(lup);
-                last_unfinished_process_id = None;
-            }
-
-            process_to_run = &mut self.queue[waiting_queue.pop_front().unwrap()];
-            process_to_run.state = ProcessState::NotInSytstem;
-            let mut node = GranttNode::default();
-            node.pid = process_to_run.pid;
-            node.start = tick;
-
-            process_to_run.run_for(self.quantum);
-            tick += self.quantum;
-
-            node.end = tick;
-            grantt_chart.push_back(node);
-
-            if process_to_run.is_finished() {
-                process_to_run.exit_time = Some(tick);
-            } else {
-                process_to_run.state = ProcessState::Ready;
-                last_unfinished_process_id = Some(process_to_run.pid);
-            }
-        }
-
-        self.result = Some(Process::compute_result(
-            self.queue.iter(),
-            grantt_chart,
-            false,
-        ))
     }
 }
